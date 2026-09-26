@@ -12,25 +12,25 @@ public class Medicamento {
     @Column(unique = true, nullable = false, length = 50)
     private String codigo;
 
-    @Column(nullable = false, length = 300)
+    @Column(nullable = false, length = 500)
     private String nombre;
 
-    @Column(length = 100)
+    @Column(length = 200)
     private String concentracion;
 
     @Column(length = 50)
     private String categoria; // UCI, CRONICO, ANTIBIOTICO, etc.
 
-    @Column(length = 200)
+    @Column(length = 1000)
     private String principioActivo;
 
-    @Column(length = 200)
+    @Column(length = 500)
     private String titular;
 
     @Column(length = 20)
     private String estadoRegistro = "VIGENTE"; // VIGENTE, VENCIDO, RENOVACION, OTRO
 
-    @Column(length = 100)
+    @Column(length = 200)
     private String registroSanitario;
 
     public Medicamento() {}

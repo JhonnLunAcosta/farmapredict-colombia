@@ -6,6 +6,7 @@ import com.farmapredict.repository.MedicamentoRepository;
 import com.farmapredict.repository.SismedPrecioRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -55,6 +56,7 @@ public class CatalogoController {
      */
     @PostMapping("/importar")
     @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
     public Map<String, Object> importarCum(@RequestParam("file") MultipartFile file) {
         int creados = 0, actualizados = 0;
         List<String> errores = new ArrayList<>();
@@ -80,13 +82,13 @@ public class CatalogoController {
                 Medicamento m = existente.orElseGet(Medicamento::new);
                 boolean nuevo = existente.isEmpty();
                 m.setCodigo(codigo);
-                m.setNombre(c[1].trim());
-                if (c.length > 2) m.setConcentracion(c[2].trim());
+                m.setNombre(corta(c[1].trim(), 500));
+                if (c.length > 2) m.setConcentracion(corta(c[2].trim(), 200));
                 if (c.length > 3 && !c[3].isBlank()) m.setCategoria(c[3].trim().toUpperCase());
-                if (c.length > 4) m.setPrincipioActivo(c[4].trim());
-                if (c.length > 5) m.setTitular(c[5].trim());
+                if (c.length > 4) m.setPrincipioActivo(corta(c[4].trim(), 1000));
+                if (c.length > 5) m.setTitular(corta(c[5].trim(), 500));
                 if (c.length > 6 && !c[6].isBlank()) m.setEstadoRegistro(c[6].trim().toUpperCase());
-                if (c.length > 7) m.setRegistroSanitario(c[7].trim());
+                if (c.length > 7) m.setRegistroSanitario(corta(c[7].trim(), 200));
                 meds.save(m);
                 if (nuevo) creados++; else actualizados++;
             }
@@ -106,6 +108,7 @@ public class CatalogoController {
      */
     @PostMapping("/precios/importar")
     @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
     public Map<String, Object> importarPrecios(@RequestParam("file") MultipartFile file) {
         int creados = 0, actualizados = 0;
         List<String> errores = new ArrayList<>();
@@ -158,5 +161,10 @@ public class CatalogoController {
     private Double num(String s) {
         if (s == null || s.isBlank()) return null;
         return Double.parseDouble(s.trim());
+    }
+
+    private String corta(String s, int max) {
+        if (s == null) return null;
+        return s.length() <= max ? s : s.substring(0, max);
     }
 }
