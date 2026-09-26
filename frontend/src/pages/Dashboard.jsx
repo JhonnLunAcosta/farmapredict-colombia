@@ -166,12 +166,15 @@ export default function Dashboard() {
       const fd = new FormData();
       fd.append("file", f);
       const url = tipo === "cum" ? "/api/catalogo/importar" : "/api/catalogo/precios/importar";
-      const { data } = await api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const { data } = await api.post(url, fd);
       showToast(`Importación ${tipo.toUpperCase()}: ${data.creados} creados · ${data.actualizados} actualizados${data.errores?.length ? ` · ${data.errores.length} errores` : ""}.`);
       loadCatalogo();
       load();
     } catch (err) {
-      showToast(err.response?.data?.error || err.response?.data?.message || "Importación fallida (solo ADMIN).", "error");
+      const s = err.response?.status;
+      const d = err.response?.data;
+      const detalle = typeof d === "string" ? d : (d?.message || d?.error || JSON.stringify(d || {}));
+      showToast(`Importación fallida (HTTP ${s ?? "sin respuesta"}): ${detalle}`, "error");
     } finally {
       setImporting(false);
       e.target.value = "";
