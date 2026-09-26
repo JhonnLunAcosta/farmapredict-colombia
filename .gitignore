@@ -1,0 +1,21 @@
+# Node / Frontend
+node_modules/
+frontend/dist/
+
+# Java / Backend
+backend/target/
+*.class
+
+# Python / ML
+__pycache__/
+*.pyc
+*.joblib
+
+# Env / OS
+.env
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
