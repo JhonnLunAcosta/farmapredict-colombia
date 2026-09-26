@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
@@ -48,6 +48,11 @@ export default function Dashboard() {
   const [catalogo, setCatalogo] = useState([]);
   const [cq, setCq] = useState("");
   const [cest, setCest] = useState("");
+  const [cpage, setCpage] = useState(0);
+  const [ctotalPages, setCtotalPages] = useState(0);
+  const [ctotal, setCtotal] = useState(0);
+  const [job, setJob] = useState(null);
+  const pollRef = useRef(null);
   const [importing, setImporting] = useState(false);
   const [pred, setPred] = useState(null);
   const [predicting, setPredicting] = useState(false);
@@ -144,39 +149,83 @@ export default function Dashboard() {
     }
   };
 
-  const loadCatalogo = async () => {
+  const loadCatalogo = async (page = 0) => {
     try {
       const params = new URLSearchParams();
       if (cq) params.set("q", cq);
       if (cest) params.set("estado", cest);
+      params.set("page", String(page));
+      params.set("size", "50");
       const { data } = await api.get(`/api/catalogo?${params.toString()}`);
-      setCatalogo(data);
+      const list = Array.isArray(data) ? data : (data.content || []);
+      setCatalogo(list);
+      setCpage(Array.isArray(data) ? 0 : (data.page || 0));
+      setCtotalPages(Array.isArray(data) ? 1 : (data.totalPages || 0));
+      setCtotal(Array.isArray(data) ? list.length : (data.totalElements || 0));
     } catch {
       showToast("No se pudo cargar el catálogo. ¿Backend en :8081?", "error");
     }
   };
 
-  useEffect(() => { if (tab === "catalogo") loadCatalogo(); }, [tab]);
+  useEffect(() => { if (tab === "catalogo" && catalogo.length === 0) loadCatalogo(0); }, [tab]);
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  const vigilarJob = (jobId) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const { data } = await api.get(`/api/catalogo/import/${jobId}`);
+        setJob(data);
+        if (data.estado === "COMPLETADO" || data.estado === "FALLIDO") {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          setImporting(false);
+          if (data.estado === "COMPLETADO") {
+            showToast(`Importación lista: ${data.creados} creados · ${data.actualizados} actualizados.`);
+            loadCatalogo(0);
+            load();
+          } else {
+            showToast(`Importación fallida: ${(data.errores || []).join(" | ") || "ver log del backend"}`, "error");
+          }
+        }
+      } catch {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        setImporting(false);
+        showToast("Se perdió el seguimiento del job. Revisa el log del backend.", "error");
+      }
+    }, 2000);
+  };
 
   const subirArchivo = async (e, tipo) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setImporting(true);
+    setJob(null);
     try {
       const fd = new FormData();
       fd.append("file", f);
-      const url = tipo === "cum" ? "/api/catalogo/importar" : "/api/catalogo/precios/importar";
-      const { data } = await api.post(url, fd);
-      showToast(`Importación ${tipo.toUpperCase()}: ${data.creados} creados · ${data.actualizados} actualizados${data.errores?.length ? ` · ${data.errores.length} errores` : ""}.`);
-      loadCatalogo();
-      load();
+      if (tipo === "cum") {
+        // Importación masiva: segundo plano con progreso
+        const { data } = await api.post("/api/catalogo/importar", fd);
+        showToast("Importación CUM en segundo plano: puedes seguir trabajando.");
+        vigilarJob(data.jobId);
+      } else {
+        const url = "/api/catalogo/precios/importar";
+        const { data } = await api.post(url, fd);
+        setImporting(false);
+        showToast(`Precios SISMED: ${data.creados} creados · ${data.actualizados} actualizados.`);
+      }
     } catch (err) {
+      setImporting(false);
       const s = err.response?.status;
       const d = err.response?.data;
       const detalle = typeof d === "string" ? d : (d?.message || d?.error || JSON.stringify(d || {}));
       showToast(`Importación fallida (HTTP ${s ?? "sin respuesta"}): ${detalle}`, "error");
     } finally {
-      setImporting(false);
+      // En CUM el importing lo apaga el poll al terminar el job
+      if (tipo !== "cum") setImporting(false);
       e.target.value = "";
     }
   };
@@ -427,17 +476,34 @@ export default function Dashboard() {
           <div className="space-y-3">
             <div className="rounded-3xl bg-white border border-emerald-100 p-4 grid sm:grid-cols-4 gap-2">
               <input className="field sm:col-span-2" placeholder="🔍 Buscar código, nombre, principio activo o titular…"
-                value={cq} onChange={(e) => setCq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && loadCatalogo()} />
-              <select className="field" value={cest} onChange={(e) => setCest(e.target.value)}>
+                value={cq} onChange={(e) => setCq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && loadCatalogo(0)} />
+              <select className="field" value={cest} onChange={(e) => { setCest(e.target.value); }}>
                 <option value="">Estado: todos</option>
                 <option value="VIGENTE">Vigente</option>
                 <option value="RENOVACION">En renovación</option>
                 <option value="VENCIDO">Vencido</option>
               </select>
-              <button onClick={loadCatalogo} className="rounded-xl text-white text-sm font-bold"
+              <button onClick={() => loadCatalogo(0)} className="rounded-xl text-white text-sm font-bold"
                 style={{ background: "linear-gradient(135deg,#059669,#065f46)" }}>Buscar en CUM</button>
             </div>
-            <p className="text-[11px] text-emerald-900/50">Fuente maestra: CUM INVIMA (app.invima.gov.co/cum) + datos.gov.co · Precios: SISMED/SISPRO · {catalogo.length} resultados</p>
+            <p className="text-[11px] text-emerald-900/50">Fuente maestra: CUM INVIMA + datos.gov.co · Precios: SISMED/SISPRO · {ctotal.toLocaleString("es-CO")} resultados · 50 por página</p>
+
+            {job && (
+              <div className="rounded-3xl bg-white border border-emerald-100 p-4">
+                <div className="flex items-center gap-2 text-sm font-bold text-emerald-950">
+                  <span>{job.estado === "COMPLETADO" ? "✅" : job.estado === "FALLIDO" ? "❌" : "⏳"}</span>
+                  Importación CUM en segundo plano · {job.estado}
+                  <span className="ml-auto font-mono text-xs">{Number(job.procesados || 0).toLocaleString("es-CO")} / {Number(job.total || 0).toLocaleString("es-CO")}</span>
+                </div>
+                <div className="mt-2 h-3 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{
+                    width: `${job.total ? Math.round((job.procesados / job.total) * 100) : 0}%`,
+                    background: "linear-gradient(90deg,#34d399,#059669)",
+                  }} />
+                </div>
+                {(job.errores || []).length > 0 && <p className="mt-1 text-[11px] text-red-600">{job.errores.slice(0, 3).join(" | ")}</p>}
+              </div>
+            )}
 
             {esAdmin && (
               <div className="rounded-3xl bg-white border border-emerald-100 p-4 grid sm:grid-cols-2 gap-3">
@@ -476,6 +542,15 @@ export default function Dashboard() {
                 </tbody>
               </table>
               {!catalogo.length && <p className="p-6 text-sm text-slate-500">Pulsa "Buscar en CUM" para cargar el catálogo.</p>}
+              {(ctotalPages > 1) && (
+                <div className="flex items-center justify-between p-4 border-t border-slate-100">
+                  <button disabled={cpage <= 0} onClick={() => loadCatalogo(cpage - 1)}
+                    className="text-xs font-bold px-4 py-2 rounded-xl border border-emerald-200 text-emerald-800 disabled:opacity-40 hover:bg-emerald-50">← Anterior</button>
+                  <span className="text-xs text-slate-500">Página {cpage + 1} de {ctotalPages} · {ctotal.toLocaleString("es-CO")} registros</span>
+                  <button disabled={cpage + 1 >= ctotalPages} onClick={() => loadCatalogo(cpage + 1)}
+                    className="text-xs font-bold px-4 py-2 rounded-xl border border-emerald-200 text-emerald-800 disabled:opacity-40 hover:bg-emerald-50">Siguiente →</button>
+                </div>
+              )}
             </div>
           </div>
         )}

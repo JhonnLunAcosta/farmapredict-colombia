@@ -4,6 +4,9 @@ import com.farmapredict.model.Medicamento;
 import com.farmapredict.model.SismedPrecio;
 import com.farmapredict.repository.MedicamentoRepository;
 import com.farmapredict.repository.SismedPrecioRepository;
+import com.farmapredict.service.CatalogoImportService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,26 +25,30 @@ public class CatalogoController {
 
     private final MedicamentoRepository meds;
     private final SismedPrecioRepository precios;
+    private final CatalogoImportService importService;
 
-    public CatalogoController(MedicamentoRepository meds, SismedPrecioRepository precios) {
+    public CatalogoController(MedicamentoRepository meds, SismedPrecioRepository precios,
+                              CatalogoImportService importService) {
         this.meds = meds;
         this.precios = precios;
+        this.importService = importService;
     }
 
+    /** Catálogo paginado: evita traer 65k filas al front. */
     @GetMapping
-    public List<Medicamento> buscar(@RequestParam(required = false) String q,
-                                    @RequestParam(required = false) String estado) {
-        List<Medicamento> all = meds.findAll();
-        String query = q == null ? "" : q.trim().toLowerCase();
-        return all.stream()
-                .filter(m -> estado == null || estado.isBlank()
-                        || estado.equalsIgnoreCase(m.getEstadoRegistro()))
-                .filter(m -> query.isBlank()
-                        || m.getCodigo().toLowerCase().contains(query)
-                        || m.getNombre().toLowerCase().contains(query)
-                        || (m.getPrincipioActivo() != null && m.getPrincipioActivo().toLowerCase().contains(query))
-                        || (m.getTitular() != null && m.getTitular().toLowerCase().contains(query)))
-                .toList();
+    public Map<String, Object> buscar(@RequestParam(required = false) String q,
+                                      @RequestParam(required = false) String estado,
+                                      @RequestParam(defaultValue = "0") int page,
+                                      @RequestParam(defaultValue = "50") int size) {
+        String query = q == null ? "" : q.trim();
+        String est = (estado == null || estado.isBlank()) ? null : estado.trim().toUpperCase();
+        Page<Medicamento> p = meds.buscar(query, est,
+                PageRequest.of(Math.max(0, page), Math.min(200, Math.max(1, size))));
+        return Map.of(
+                "content", p.getContent(),
+                "totalElements", p.getTotalElements(),
+                "totalPages", p.getTotalPages(),
+                "page", p.getNumber());
     }
 
     @GetMapping("/{codigo}/precios")
@@ -50,61 +57,43 @@ public class CatalogoController {
     }
 
     /**
-     * Carga masiva del catálogo CUM (INVIMA).
-     * CSV con cabecera:
-     * codigo,nombre,concentracion,categoria,principio_activo,titular,estado,registro_sanitario
+     * Carga masiva CUM por lotes en segundo plano.
+     * Responde al instante con jobId; el progreso se consulta en GET /api/catalogo/import/{jobId}.
+     * CSV: codigo,nombre,concentracion,categoria,principio_activo,titular,estado,registro_sanitario
      */
     @PostMapping("/importar")
     @PreAuthorize("hasRole('ADMIN')")
-    @Transactional
-    public Map<String, Object> importarCum(@RequestParam("file") MultipartFile file) {
-        int creados = 0, actualizados = 0;
-        List<String> errores = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(
-                new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
-            String header = br.readLine();
-            if (header == null || !header.toLowerCase().contains("codigo")) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "CSV inválido. Cabecera esperada: codigo,nombre,concentracion,categoria,principio_activo,titular,estado,registro_sanitario");
-            }
-            String line;
-            int fila = 1;
-            while ((line = br.readLine()) != null) {
-                fila++;
-                if (line.isBlank()) continue;
-                String[] c = line.split(",", -1);
-                if (c.length < 2 || c[0].isBlank() || c[1].isBlank()) {
-                    errores.add("Fila " + fila + ": código y nombre obligatorios");
-                    continue;
-                }
-                String codigo = c[0].trim().toUpperCase();
-                Optional<Medicamento> existente = meds.findByCodigo(codigo);
-                Medicamento m = existente.orElseGet(Medicamento::new);
-                boolean nuevo = existente.isEmpty();
-                m.setCodigo(codigo);
-                m.setNombre(corta(c[1].trim(), 500));
-                if (c.length > 2) m.setConcentracion(corta(c[2].trim(), 200));
-                if (c.length > 3 && !c[3].isBlank()) m.setCategoria(c[3].trim().toUpperCase());
-                if (c.length > 4) m.setPrincipioActivo(corta(c[4].trim(), 1000));
-                if (c.length > 5) m.setTitular(corta(c[5].trim(), 500));
-                if (c.length > 6 && !c[6].isBlank()) m.setEstadoRegistro(c[6].trim().toUpperCase());
-                if (c.length > 7) m.setRegistroSanitario(corta(c[7].trim(), 200));
-                meds.save(m);
-                if (nuevo) creados++; else actualizados++;
-            }
-        } catch (ResponseStatusException e) {
-            throw e;
+    public Map<String, String> importarCum(@RequestParam("file") MultipartFile file) {
+        try {
+            CatalogoImportService.Job job = importService.crearJob();
+            importService.procesar(job.id, file.getBytes());
+            return Map.of("jobId", job.id, "estado", job.estado);
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No se pudo leer el archivo: " + e.getMessage());
         }
-        return Map.of("creados", creados, "actualizados", actualizados,
-                "errores", errores.size() > 20 ? errores.subList(0, 20) : errores);
+    }
+
+    @GetMapping("/import/{jobId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Map<String, Object> estadoImport(@PathVariable String jobId) {
+        return importService.ver(jobId)
+                .map(j -> {
+                    Map<String, Object> r = new LinkedHashMap<>();
+                    r.put("jobId", j.id);
+                    r.put("estado", j.estado);
+                    r.put("total", j.total);
+                    r.put("procesados", j.procesados.get());
+                    r.put("creados", j.creados.get());
+                    r.put("actualizados", j.actualizados.get());
+                    r.put("errores", j.errores.size() > 20 ? j.errores.subList(0, 20) : List.copyOf(j.errores));
+                    return r;
+                })
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job no encontrado"));
     }
 
     /**
-     * Carga masiva de precios SISMED.
-     * CSV con cabecera: codigo,periodo,canal,precio_min,precio_max,precio_prom,unidades
-     * periodo ej. 2026-T3 · canal INS o COM
+     * Carga masiva de precios SISMED (archivos pequeños: sincrónica).
+     * CSV: codigo,periodo,canal,precio_min,precio_max,precio_prom,unidades
      */
     @PostMapping("/precios/importar")
     @PreAuthorize("hasRole('ADMIN')")
@@ -161,10 +150,5 @@ public class CatalogoController {
     private Double num(String s) {
         if (s == null || s.isBlank()) return null;
         return Double.parseDouble(s.trim());
-    }
-
-    private String corta(String s, int max) {
-        if (s == null) return null;
-        return s.length() <= max ? s : s.substring(0, max);
     }
 }

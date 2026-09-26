@@ -34,6 +34,11 @@ y filtra por estado del registro. Como ADMIN, importa masivos:
   IPS/gestor desde su propio software: se carga como historial en Pronóstico o a
   futuro por CSV.
 
+La importación CUM corre **en segundo plano por lotes**: subes el archivo, la app
+responde al instante con una barra de progreso y puedes seguir trabajando mientras
+se procesan las 65k filas. El catálogo se consulta **paginado de 50** para no
+cargar el navegador.
+
 ## Admin
 Pestaña **Usuarios**: crea cuentas (`USER`, `QF`, `ADMIN`).
 Solo visible con rol ADMIN.

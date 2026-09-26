@@ -38,5 +38,21 @@ public class DbMigrationRunner implements CommandLineRunner {
                 // Tabla aún no creada (la crea Hibernate después) o motor distinto.
             }
         }
+        // Vista de lectura: inventario + riesgo calculado en SQL (reportes sin cargar JPA).
+        try {
+            em.createNativeQuery(
+                "CREATE OR REPLACE VIEW v_inventario_riesgo AS "
+              + "SELECT i.id AS inventario_id, m.codigo AS codigo, m.nombre AS nombre, "
+              + "m.principio_activo AS principio_activo, i.sede AS sede, i.stock AS stock, "
+              + "i.demanda_semanal AS demanda_semanal, "
+              + "ROUND(i.stock / NULLIF(i.demanda_semanal, 0), 1) AS cobertura_semanas, "
+              + "CASE WHEN i.demanda_semanal IS NULL OR i.demanda_semanal <= 0 THEN 'alto' "
+              + "WHEN i.stock / i.demanda_semanal >= 4 THEN 'bajo' "
+              + "WHEN i.stock / i.demanda_semanal >= 2 THEN 'medio' ELSE 'alto' END AS riesgo, "
+              + "GREATEST(0, ROUND(i.demanda_semanal * 4 - i.stock)) AS compra_sugerida "
+              + "FROM inventarios i JOIN medicamentos m ON m.id = i.medicamento_id"
+            ).executeUpdate();
+        } catch (Exception ignored) {
+        }
     }
 }

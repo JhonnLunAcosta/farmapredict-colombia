@@ -44,12 +44,21 @@ riesgo `bajo ≥ 4`, `medio ≥ 2`, `alto < 2`; `compra = demanda×4 − stock` 
 Errores: `401` sin token, `400` historial inválido, `404` código inexistente (según evolución).
 
 ## Catálogo CUM (INVIMA) y precios SISMED
-- `GET /api/catalogo?q=&estado=` (JWT) — busca por código, nombre, principio activo o titular. `estado`: `VIGENTE`, `RENOVACION`, `VENCIDO`.
+- `GET /api/catalogo?q=&estado=&page=0&size=50` (JWT) — **paginado** (máx 200 por página).
+  Responde `{ content, totalElements, totalPages, page }`. `estado`: `VIGENTE`, `RENOVACION`, `VENCIDO`.
 - `GET /api/catalogo/{codigo}/precios` (JWT) — precios SISMED por periodo/canal.
-- `POST /api/catalogo/importar` (solo `ADMIN`, multipart `file` CSV) — carga masiva CUM.
-  Cabecera: `codigo,nombre,concentracion,categoria,principio_activo,titular,estado,registro_sanitario`
-- `POST /api/catalogo/precios/importar` (solo `ADMIN`, multipart `file` CSV) — carga masiva SISMED.
+- `POST /api/catalogo/importar` (solo `ADMIN`, multipart `file` CSV) — carga masiva CUM
+  **por lotes JDBC en segundo plano** (1 SELECT + lotes de 1000, no 130k queries).
+  Responde al instante `{ jobId, estado }`; el progreso se consulta en:
+- `GET /api/catalogo/import/{jobId}` (solo `ADMIN`) —
+  `{ estado: PROCESANDO|COMPLETADO|FALLIDO, total, procesados, creados, actualizados, errores }`.
+  Cabecera CSV: `codigo,nombre,concentracion,categoria,principio_activo,titular,estado,registro_sanitario`
+- `POST /api/catalogo/precios/importar` (solo `ADMIN`, multipart `file` CSV, sincrónico).
   Cabecera: `codigo,periodo,canal,precio_min,precio_max,precio_prom,unidades` (periodo ej. `2026-T3`, canal `INS`/`COM`)
+
+## Vista de lectura
+`v_inventario_riesgo` (creada al arrancar): inventario + cobertura/riesgo/compra
+calculados en SQL, para reportes sin cargar JPA.
 
 ## Códigos de error comunes
 | Código | Cuándo |

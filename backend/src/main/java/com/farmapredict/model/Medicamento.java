@@ -3,7 +3,10 @@ package com.farmapredict.model;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "medicamentos")
+@Table(name = "medicamentos", indexes = {
+        @Index(name = "idx_med_nombre", columnList = "nombre"),
+        @Index(name = "idx_med_principio", columnList = "principio_activo")
+})
 public class Medicamento {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
