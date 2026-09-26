@@ -49,3 +49,4 @@ Entrena el baseline RandomForest con `data_sample.csv` e imprime MAE por medicam
 | Login 401 | Backend abajo o credenciales mal; verifica `:8081/api/health` y el seed. |
 | Frontend sin estilos | `vite.config.js` requiere plugin `@tailwindcss/vite`; corre `npm install` y reinicia `npm run dev`. |
 | Toast "modo demo" en pronóstico | Backend no disponible; el cálculo es local. Levanta el backend para modo servidor. |
+| `Data truncation ... principio_activo` al importar | Tu `farma_db` se creó con columnas angostas. Desde este fix el backend las ensancha solo al arrancar (`DbMigrationRunner`). Solo reinicia el backend. |
