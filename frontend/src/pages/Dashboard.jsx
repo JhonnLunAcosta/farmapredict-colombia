@@ -35,6 +35,7 @@ function computeLocal(codigo, historial, meds) {
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
+  const esAdmin = user?.rol === "ADMIN";
   const [tab, setTab] = useState("resumen");
   const [meds, setMeds] = useState([]);
   const [stats, setStats] = useState(null);
@@ -44,6 +45,10 @@ export default function Dashboard() {
   const [fRiesgo, setFRiesgo] = useState("");
   const [prRiesgo, setPrRiesgo] = useState("alto");
   const [form, setForm] = useState({ codigo: "N05BA01", historial: "110, 125, 118, 140, 135, 150, 148, 160" });
+  const [catalogo, setCatalogo] = useState([]);
+  const [cq, setCq] = useState("");
+  const [cest, setCest] = useState("");
+  const [importing, setImporting] = useState(false);
   const [pred, setPred] = useState(null);
   const [predicting, setPredicting] = useState(false);
 
@@ -69,7 +74,7 @@ export default function Dashboard() {
 
   const criticos = useMemo(() => meds.filter((m) => m.riesgo === "alto"), [meds]);
   const filtrados = useMemo(() => meds.filter((m) =>
-    `${m.nombre} ${m.codigo} ${m.sede}`.toLowerCase().includes(q.toLowerCase()) &&
+    `${m.nombre} ${m.codigo} ${m.sede} ${m.principioActivo || ""} ${m.titular || ""}`.toLowerCase().includes(q.toLowerCase()) &&
     (!fRiesgo || m.riesgo === fRiesgo)
   ), [meds, q, fRiesgo]);
 
@@ -139,6 +144,40 @@ export default function Dashboard() {
     }
   };
 
+  const loadCatalogo = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (cq) params.set("q", cq);
+      if (cest) params.set("estado", cest);
+      const { data } = await api.get(`/api/catalogo?${params.toString()}`);
+      setCatalogo(data);
+    } catch {
+      showToast("No se pudo cargar el catálogo. ¿Backend en :8081?", "error");
+    }
+  };
+
+  useEffect(() => { if (tab === "catalogo") loadCatalogo(); }, [tab]);
+
+  const subirArchivo = async (e, tipo) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const url = tipo === "cum" ? "/api/catalogo/importar" : "/api/catalogo/precios/importar";
+      const { data } = await api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      showToast(`Importación ${tipo.toUpperCase()}: ${data.creados} creados · ${data.actualizados} actualizados${data.errores?.length ? ` · ${data.errores.length} errores` : ""}.`);
+      loadCatalogo();
+      load();
+    } catch (err) {
+      showToast(err.response?.data?.error || err.response?.data?.message || "Importación fallida (solo ADMIN).", "error");
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
   const kpis = [
     { t: "Referencias activas", v: stats?.total ?? meds.length, s: "sedes Bogotá + UCI", g: "linear-gradient(135deg,#10b981,#047857)" },
     { t: "En riesgo alto", v: stats?.criticos ?? criticos.length, s: "requieren compra ya", g: "linear-gradient(135deg,#f43f5e,#b91c1c)" },
@@ -161,7 +200,7 @@ export default function Dashboard() {
             </div>
           </div>
           <nav className="ml-6 hidden md:flex items-center gap-1 bg-emerald-50 border border-emerald-100 rounded-full p-1">
-            {[["resumen", "Resumen"], ["inventario", "Inventario"], ["pronostico", "Pronóstico"]].map(([id, label]) => (
+            {[["resumen", "Resumen"], ["inventario", "Inventario"], ["pronostico", "Pronóstico"], ["catalogo", "Catálogo"]].map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)}
                 className={`text-xs font-bold px-4 py-2 rounded-full transition ${tab === id ? "text-white shadow" : "text-emerald-900/60 hover:text-emerald-900"}`}
                 style={tab === id ? { background: "linear-gradient(135deg,#059669,#065f46)" } : undefined}>
@@ -176,7 +215,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="md:hidden px-4 pb-3 flex gap-2">
-          {[["resumen", "Resumen"], ["inventario", "Inventario"], ["pronostico", "Pronóstico"]].map(([id, label]) => (
+          {[["resumen", "Resumen"], ["inventario", "Inventario"], ["pronostico", "Pronóstico"], ["catalogo", "Catálogo"]].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} className={`flex-1 text-xs font-bold px-3 py-2 rounded-xl border ${tab === id ? "text-white border-transparent" : "bg-white text-emerald-900 border-emerald-200"}`}
               style={tab === id ? { background: "linear-gradient(135deg,#059669,#065f46)" } : undefined}>{label}</button>
           ))}
@@ -377,6 +416,63 @@ export default function Dashboard() {
                   <p className="text-[11px] text-emerald-100/60">Demanda estimada próximas 4 semanas · {pred.origen === "backend" ? "calculado por el servidor" : "cálculo local de demostración"}.</p>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {tab === "catalogo" && (
+          <div className="space-y-3">
+            <div className="rounded-3xl bg-white border border-emerald-100 p-4 grid sm:grid-cols-4 gap-2">
+              <input className="field sm:col-span-2" placeholder="🔍 Buscar código, nombre, principio activo o titular…"
+                value={cq} onChange={(e) => setCq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && loadCatalogo()} />
+              <select className="field" value={cest} onChange={(e) => setCest(e.target.value)}>
+                <option value="">Estado: todos</option>
+                <option value="VIGENTE">Vigente</option>
+                <option value="RENOVACION">En renovación</option>
+                <option value="VENCIDO">Vencido</option>
+              </select>
+              <button onClick={loadCatalogo} className="rounded-xl text-white text-sm font-bold"
+                style={{ background: "linear-gradient(135deg,#059669,#065f46)" }}>Buscar en CUM</button>
+            </div>
+            <p className="text-[11px] text-emerald-900/50">Fuente maestra: CUM INVIMA (app.invima.gov.co/cum) + datos.gov.co · Precios: SISMED/SISPRO · {catalogo.length} resultados</p>
+
+            {esAdmin && (
+              <div className="rounded-3xl bg-white border border-emerald-100 p-4 grid sm:grid-cols-2 gap-3">
+                <label className="rounded-2xl border-2 border-dashed border-emerald-200 p-4 text-center cursor-pointer hover:bg-emerald-50 transition">
+                  <p className="text-sm font-bold text-emerald-900">📤 Importar CUM (CSV)</p>
+                  <p className="text-[11px] text-slate-500">codigo,nombre,concentracion,categoria,principio_activo,titular,estado,registro · ver <span className="font-mono">datos/cum_ejemplo.csv</span></p>
+                  <input type="file" accept=".csv" className="hidden" disabled={importing} onChange={(e) => subirArchivo(e, "cum")} />
+                  <span className="mt-2 inline-block text-xs font-bold px-3 py-1.5 rounded-xl text-white" style={{ background: "#065f46" }}>
+                    {importing ? "Importando…" : "Elegir archivo"}
+                  </span>
+                </label>
+                <label className="rounded-2xl border-2 border-dashed border-cyan-200 p-4 text-center cursor-pointer hover:bg-cyan-50 transition">
+                  <p className="text-sm font-bold text-cyan-900">📤 Importar precios SISMED (CSV)</p>
+                  <p className="text-[11px] text-slate-500">codigo,periodo,canal,precio_min,precio_max,precio_prom,unidades · ver <span className="font-mono">datos/sismed_ejemplo.csv</span></p>
+                  <input type="file" accept=".csv" className="hidden" disabled={importing} onChange={(e) => subirArchivo(e, "precios")} />
+                  <span className="mt-2 inline-block text-xs font-bold px-3 py-1.5 rounded-xl text-white" style={{ background: "#0369a1" }}>
+                    {importing ? "Importando…" : "Elegir archivo"}
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="rounded-3xl bg-white border border-emerald-100 overflow-hidden">
+              <table className="tbl">
+                <thead><tr><th>CUM</th><th>Medicamento</th><th>Principio activo</th><th>Titular</th><th>Estado</th></tr></thead>
+                <tbody>
+                  {catalogo.map((m) => (
+                    <tr key={m.id}>
+                      <td className="font-mono text-xs">{m.codigo}</td>
+                      <td><b>{m.nombre}</b><br /><span className="text-xs text-slate-400">{m.concentracion} · {m.categoria} · {m.registroSanitario}</span></td>
+                      <td className="text-xs">{m.principioActivo || "—"}</td>
+                      <td className="text-xs">{m.titular || "—"}</td>
+                      <td><span className={`badge ${m.estadoRegistro === "VIGENTE" ? "badge-green" : m.estadoRegistro === "RENOVACION" ? "badge-amber" : "badge-red"}`}>{m.estadoRegistro}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!catalogo.length && <p className="p-6 text-sm text-slate-500">Pulsa "Buscar en CUM" para cargar el catálogo.</p>}
             </div>
           </div>
         )}

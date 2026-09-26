@@ -43,6 +43,14 @@ Reglas: promedio últimas 8 semanas; `cobertura = stock/demanda`;
 riesgo `bajo ≥ 4`, `medio ≥ 2`, `alto < 2`; `compra = demanda×4 − stock` (≥ 0).
 Errores: `401` sin token, `400` historial inválido, `404` código inexistente (según evolución).
 
+## Catálogo CUM (INVIMA) y precios SISMED
+- `GET /api/catalogo?q=&estado=` (JWT) — busca por código, nombre, principio activo o titular. `estado`: `VIGENTE`, `RENOVACION`, `VENCIDO`.
+- `GET /api/catalogo/{codigo}/precios` (JWT) — precios SISMED por periodo/canal.
+- `POST /api/catalogo/importar` (solo `ADMIN`, multipart `file` CSV) — carga masiva CUM.
+  Cabecera: `codigo,nombre,concentracion,categoria,principio_activo,titular,estado,registro_sanitario`
+- `POST /api/catalogo/precios/importar` (solo `ADMIN`, multipart `file` CSV) — carga masiva SISMED.
+  Cabecera: `codigo,periodo,canal,precio_min,precio_max,precio_prom,unidades` (periodo ej. `2026-T3`, canal `INS`/`COM`)
+
 ## Códigos de error comunes
 | Código | Cuándo |
 |---|---|

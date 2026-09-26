@@ -24,10 +24,25 @@ inventarios (id, medicamento_id FK, sede, stock, demandaSemanal)
 | Campo | Tipo | Notas |
 |---|---|---|
 | id | BIGINT AI PK | |
-| codigo | VARCHAR(50) UNIQUE NOT NULL | ej. `N05BA01` |
+| codigo | VARCHAR(50) UNIQUE NOT NULL | CUM INVIMA, ej. `N05BA01` |
 | nombre | VARCHAR(300) NOT NULL | ej. `Norepinefrina 4mg/4mL` |
 | concentracion | VARCHAR(100) | ej. `4mg/4mL` |
-| categoria | VARCHAR(50) | `UCI`, `CRONICO`, `ANTIBIOTICO`, `GENERAL`, `NEURO` |
+| categoria | VARCHAR(50) | `UCI`, `CRONICO`, `ANTIBIOTICO`, `GENERAL`, `NEURO`, `ONCO`, `VIH` |
+| principioActivo | VARCHAR(200) | ej. `NOREPINEFRINA` (del CUM) |
+| titular | VARCHAR(200) | titular del registro sanitario |
+| estadoRegistro | VARCHAR(20) | `VIGENTE`, `VENCIDO`, `RENOVACION`, `OTRO` |
+| registroSanitario | VARCHAR(100) | ej. `INVIMA 2021M-0001` |
+
+### `sismed_precios`
+Precios de referencia SISMED por periodo y canal. UNIQUE(codigoCum, periodo, canal).
+| Campo | Tipo | Notas |
+|---|---|---|
+| id | BIGINT AI PK | |
+| codigoCum | VARCHAR(50) NOT NULL | FK lógica → medicamentos.codigo |
+| periodo | VARCHAR(20) NOT NULL | ej. `2026-T3` |
+| canal | VARCHAR(10) NOT NULL | `INS` institucional / `COM` comercial |
+| precioMin / precioMax / precioProm | DOUBLE | pesos COP |
+| unidades | BIGINT | unidades reportadas en el periodo |
 
 ### `inventarios`
 | Campo | Tipo | Notas |

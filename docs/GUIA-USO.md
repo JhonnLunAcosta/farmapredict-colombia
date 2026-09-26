@@ -20,6 +20,20 @@
    - Badge `MODO DEMO` = backend no disponible, cálculo local aplicado.
 4. **Actualizar**: botón ↻ recarga medicamentos + stats.
 
+## Catálogo y data real
+Pestaña **Catálogo**: busca en el CUM por código, nombre, principio activo o titular
+y filtra por estado del registro. Como ADMIN, importa masivos:
+- **CUM (INVIMA)**: `datos/cum_ejemplo.csv` → `POST /api/catalogo/importar`.
+  Maestro oficial: https://app.invima.gov.co/cum y datasets "Código Único de
+  Medicamentos" en https://www.datos.gov.co (quien provee: INVIMA; reportan
+  titulares, fabricantes e importadores).
+- **Precios SISMED**: `datos/sismed_ejemplo.csv` → `POST /api/catalogo/precios/importar`.
+  Dato oficial: Ministerio de Salud/SISPRO (https://web.sispro.gov.co, boletines en
+  minsalud.gov.co); reportan fabricantes, importadores y titulares (Circular 21/2026).
+- La **dispensación por sede** (lo que alimenta el pronóstico) la provee cada
+  IPS/gestor desde su propio software: se carga como historial en Pronóstico o a
+  futuro por CSV.
+
 ## Admin
 Pestaña **Usuarios**: crea cuentas (`USER`, `QF`, `ADMIN`).
 Solo visible con rol ADMIN.
