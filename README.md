@@ -106,3 +106,9 @@ farmapredict-colombia/
 ## 📄 Licencia
 
 MIT — ver [`LICENSE`](LICENSE).
+
+## 👤 Autor
+
+Jhonn Luna Acosta — Ingeniero de Sistemas | Tech Lead
+LinkedIn: https://www.linkedin.com/in/jhonn-luna-acosta
+GitHub: https://github.com/JhonnLunAcosta
